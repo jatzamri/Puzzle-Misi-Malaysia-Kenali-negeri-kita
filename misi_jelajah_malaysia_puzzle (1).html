@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Misi Jelajah Malaysia: Puzzle Negeri-Negeri Malaysia</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & Outfit -->
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- MediaPipe Hands & Camera Utils -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Outfit', 'sans-serif'],
+          },
+          colors: {
+            myBlue: '#0A3895',
+            myBlueDark: '#062566',
+            myYellow: '#FFD100',
+            myRed: '#E30613',
+            myBg: '#F0F4F8'
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #F0F4F8;
+      overflow-x: hidden;
+      user-select: none;
+    }
+    
+    .map-state {
+      transition: all 0.3s ease;
+      stroke: #ffffff;
+      stroke-width: 1.5;
+    }
+    .map-state:hover {
+      filter: brightness(1.1);
+    }
+    .drop-highlight {
+      stroke: #FFD100 !important;
+      stroke-width: 3 !important;
+      filter: drop-shadow(0 0 8px rgba(255, 209, 0, 0.8));
+    }
+    .state-correct {
+      fill: #10B981 !important;
+      stroke: #047857 !important;
+    }
+
+    /* Hand Cursor Style */
+    #virtual-cursor {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      transition: width 0.1s, height 0.1s, background-color 0.15s;
+    }
+
+    .pulse-glow {
+      animation: glow 1.5s infinite alternate;
+    }
+    @keyframes glow {
+      from { box-shadow: 0 0 5px #FFD100, 0 0 10px #FFD100; }
+      to { box-shadow: 0 0 20px #FFD100, 0 0 30px #FFD100; }
+    }
+
+    /* Floating label style */
+    .puzzle-piece {
+      touch-action: none;
+      transition: transform 0.1s ease, box-shadow 0.2s ease;
+    }
+    .puzzle-piece.dragging {
+      z-index: 50;
+      scale: 1.08;
+      box-shadow: 0 15px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+    .puzzle-piece.placed {
+      opacity: 0.6;
+      pointer-events: none;
+      filter: grayscale(0.6);
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col justify-between">
+
+  <!-- VIRTUAL FINGER CURSOR -->
+  <div id="virtual-cursor" class="w-8 h-8 rounded-full border-4 border-yellow-400 bg-red-600/80 shadow-lg flex items-center justify-center text-white text-xs font-bold transform -translate-x-1/2 -translate-y-1/2 opacity-0">
+    <div id="cursor-center" class="w-2 h-2 bg-white rounded-full"></div>
+  </div>
+
+  <!-- HEADER NAVBAR -->
+  <header class="bg-myBlue text-white shadow-md border-b-4 border-myYellow">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+      <div class="flex items-center space-x-3">
+        <div class="bg-myYellow text-myBlue p-2 rounded-xl font-display font-extrabold text-2xl shadow">
+          🇲🇾
+        </div>
+        <div>
+          <h1 class="font-display font-extrabold text-xl md:text-2xl leading-tight text-white tracking-wide">
+            MISI JELAJAH MALAYSIA
+          </h1>
+          <p class="text-xs text-yellow-300 font-medium">Puzzle Negeri-Negeri Interactive Webcam Game</p>
+        </div>
+      </div>
+
+      <!-- Live Stats (Game View Only) -->
+      <div id="top-stats-bar" class="hidden flex items-center space-x-4 md:space-x-8 bg-myBlueDark/60 px-4 py-2 rounded-xl border border-blue-400/30">
+        <!-- Timer -->
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid me-1 fa-clock text-myYellow text-lg"></i>
+          <div>
+            <div class="text-[10px] text-gray-300 uppercase font-semibold">Masa</div>
+            <div id="timer-display" class="font-mono font-bold text-lg md:text-xl text-white">00:00</div>
+          </div>
+        </div>
+
+        <!-- Lives -->
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-heart text-red-500 text-lg"></i>
+          <div>
+            <div class="text-[10px] text-gray-300 uppercase font-semibold">Nyawa</div>
+            <div id="lives-display" class="flex space-x-1 text-red-500 text-lg">
+              <span>❤️</span><span>❤️</span><span>❤️</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Score -->
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-star text-myYellow text-lg"></i>
+          <div>
+            <div class="text-[10px] text-gray-300 uppercase font-semibold">Markah</div>
+            <div id="score-display" class="font-display font-black text-xl text-myYellow">0 / 160</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="flex-grow max-w-7xl w-full mx-auto p-4 flex flex-col justify-center">
+
+    <!-- 1. REGISTRATION / LANDING PAGE SCREEN -->
+    <div id="screen-welcome" class="max-w-xl mx-auto w-full bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden my-6">
+      <div class="bg-gradient-to-r from-myBlue to-blue-700 p-8 text-center text-white relative overflow-hidden">
+        <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-myYellow/20 rounded-full blur-xl"></div>
+        <i class="fa-solid fa-map-location-dot text-6xl text-myYellow mb-3"></i>
+        <h2 class="font-display text-3xl font-extrabold">Daftar Misi Pelajar</h2>
+        <p class="text-blue-100 text-sm mt-1">Gunakan pergerakan jari telunjuk anda untuk menyusun negeri-negeri di Malaysia!</p>
+      </div>
+
+      <form id="form-register" class="p-8 space-y-6">
+        <div>
+          <label class="block text-sm font-bold text-slate-700 mb-2" for="student-name">
+            <i class="fa-solid fa-user text-myBlue mr-2"></i>Nama Murid:
+          </label>
+          <input type="text" id="student-name" required placeholder="Contoh: Muhammad Ali"
+            class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-4 focus:ring-blue-200 focus:border-myBlue transition font-medium outline-none">
+        </div>
+
+        <div>
+          <label class="block text-sm font-bold text-slate-700 mb-2" for="student-class">
+            <i class="fa-solid fa-graduation-cap text-myBlue mr-2"></i>Kelas:
+          </label>
+          <input type="text" id="student-class" required placeholder="Contoh: 2 Bestari"
+            class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-4 focus:ring-blue-200 focus:border-myBlue transition font-medium outline-none">
+        </div>
+
+        <!-- Instructions Accordion/Box -->
+        <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 space-y-2">
+          <div class="font-bold text-amber-800 text-sm flex items-center">
+            <i class="fa-solid fa-hand-pointer mr-2 text-base text-amber-600"></i> Cara Bermain (Webcam Control):
+          </div>
+          <ul class="list-disc list-inside space-y-1">
+            <li>Pastikan kamera laptop/komputer diaktifkan.</li>
+            <li>Tunjukkan **Jari Telunjuk** ke arah kamera untuk mengawal kursor merah.</li>
+            <li>**Lakukan Gerakan Pinch (Temukan Ibu Jari & Jari Telunjuk)** untuk **MENGAMBIL / MENGGERAKKAN** label puzzle.</li>
+            <li>Lepaskan pinch di kawasan kedudukan negeri yang betul pada peta.</li>
+          </ul>
+        </div>
+
+        <button type="submit" id="btn-start-game"
+          class="w-full py-4 bg-myYellow hover:bg-yellow-400 text-myBlue font-display font-extrabold text-xl rounded-2xl shadow-lg hover:shadow-xl transform active:scale-98 transition flex items-center justify-center space-x-3 border-2 border-yellow-500">
+          <span>MULA MISI JELAJAH</span>
+          <i class="fa-solid fa-circle-play"></i>
+        </button>
+      </form>
+    </div>
+
+    <!-- 2. MAIN GAME SCREEN -->
+    <div id="screen-game" class="hidden flex flex-col space-y-4">
+      
+      <!-- Top Helper Notification -->
+      <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between shadow-sm">
+        <div class="flex items-center space-x-3 text-sm text-myBlue font-semibold">
+          <i class="fa-solid fa-circle-info text-lg text-blue-600"></i>
+          <span id="instruction-text">Gunakan jari telunjuk & lakukan 'Pinch' untuk mengambil label negeri ke kedudukan betul!</span>
+        </div>
+        <div id="hand-status-badge" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-xs font-bold flex items-center">
+          <span class="w-2 h-2 rounded-full bg-gray-400 mr-2" id="hand-status-dot"></span>
+          <span id="hand-status-text">Mengesan Tangan...</span>
+        </div>
+      </div>
+
+      <!-- Interactive Area Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
+        
+        <!-- Left Side: Unassigned State Pieces -->
+        <div class="lg:col-span-1 bg-white p-4 rounded-2xl shadow-md border border-slate-200 h-[500px] flex flex-col">
+          <h3 class="font-display font-bold text-slate-700 mb-3 flex justify-between items-center border-b pb-2">
+            <span><i class="fa-solid fa-puzzle-piece text-myBlue mr-2"></i>Label Puzzle</span>
+            <span id="pieces-left-count" class="text-xs bg-blue-100 text-myBlue px-2 py-1 rounded-full font-bold">16 / 16</span>
+          </h3>
+          
+          <div id="puzzle-pieces-container" class="flex-grow overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+            <!-- Puzzle Label Pieces Generated Dynamically -->
+          </div>
+        </div>
+
+        <!-- Center/Right Side: Interactive SVG Map Container -->
+        <div class="lg:col-span-3 bg-white p-4 rounded-2xl shadow-md border border-slate-200 flex flex-col items-center justify-center relative min-h-[500px] overflow-hidden" id="map-wrapper">
+          
+          <!-- MALAYSIA SVG MAP (BASED ON WORKSHEET OUTLINE IMAGE) -->
+          <svg id="malaysia-svg" viewBox="0 0 1000 520" class="w-full h-auto max-h-[480px] drop-shadow-sm">
+            
+            <!-- MAP CONTAINER / STYLES -->
+            <g id="map-states" stroke="#1e293b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              
+              <!-- SEMENANJUNG MALAYSIA -->
+              <!-- Perlis -->
+              <path id="drop-zone-perlis" data-state="Perlis" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 90,82 C 85,78 88,68 95,60 C 102,64 108,72 105,82 C 98,85 92,84 90,82 Z" />
+
+              <!-- Kedah -->
+              <path id="drop-zone-kedah" data-state="Kedah" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 90,82 C 92,84 98,85 105,82 C 108,72 102,64 95,60 C 102,55 110,70 120,78 C 128,85 130,95 135,108 C 122,125 112,130 102,125 C 98,115 102,100 95,95 C 90,92 88,88 90,82 Z" />
+
+              <!-- Pulau Pinang -->
+              <path id="drop-zone-penang" data-state="Pulau Pinang" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 78,118 C 76,112 85,110 88,116 C 88,124 80,128 78,118 Z M 95,122 C 95,120 102,118 102,124 C 100,128 94,126 95,122 Z" />
+
+              <!-- Perak -->
+              <path id="drop-zone-perak" data-state="Perak" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 102,125 C 112,130 122,125 135,108 C 142,120 152,132 155,145 C 145,170 135,195 125,220 C 115,215 110,205 112,190 C 105,178 98,155 102,125 Z" />
+
+              <!-- Kelantan -->
+              <path id="drop-zone-kelantan" data-state="Kelantan" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 135,108 C 148,88 175,100 190,105 C 195,125 200,148 198,162 C 182,165 168,160 155,145 C 152,132 142,120 135,108 Z" />
+
+              <!-- Terengganu -->
+              <path id="drop-zone-terengganu" data-state="Terengganu" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 190,105 C 210,120 235,148 245,178 C 240,195 235,210 228,222 C 218,212 210,198 198,162 C 200,148 195,125 190,105 Z" />
+
+              <!-- Pahang -->
+              <path id="drop-zone-pahang" data-state="Pahang" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 155,145 C 168,160 182,165 198,162 C 210,198 218,212 228,222 C 235,235 248,255 258,265 C 235,275 205,278 185,272 C 172,250 162,230 155,200 C 145,170 155,145 155,145 Z" />
+
+              <!-- Selangor -->
+              <path id="drop-zone-selangor" data-state="Selangor" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 125,220 C 135,195 145,170 155,200 C 162,230 172,250 185,272 C 175,278 165,282 158,285 C 145,260 132,240 125,220 Z" />
+
+              <!-- WP Kuala Lumpur -->
+              <path id="drop-zone-wpkl" data-state="Wilayah Persekutuan Kuala Lumpur" class="map-state fill-slate-50 hover:fill-amber-100" stroke-dasharray="2,2"
+                d="M 158,242 C 162,240 166,244 164,248 C 160,250 156,246 158,242 Z" />
+
+              <!-- WP Putrajaya -->
+              <path id="drop-zone-putrajaya" data-state="Wilayah Persekutuan Putrajaya" class="map-state fill-slate-50 hover:fill-amber-100" stroke-dasharray="2,2"
+                d="M 157,254 C 160,253 162,256 160,258 C 156,259 155,256 157,254 Z" />
+
+              <!-- Negeri Sembilan -->
+              <path id="drop-zone-n9" data-state="Negeri Sembilan" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 185,272 C 205,278 215,280 220,292 C 200,302 185,300 172,295 C 165,282 175,278 185,272 Z" />
+
+              <!-- Melaka -->
+              <path id="drop-zone-melaka" data-state="Melaka" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 172,295 C 185,300 195,302 200,312 C 190,320 180,318 170,310 C 168,302 170,298 172,295 Z" />
+
+              <!-- Johor -->
+              <path id="drop-zone-johor" data-state="Johor" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 258,265 C 275,300 290,340 280,365 C 265,372 245,360 220,335 C 200,312 195,302 220,292 C 205,278 235,275 258,265 Z" />
+
+              <!-- SABAH, SARAWAK & LABUAN (EAST MALAYSIA) -->
+              <!-- Sarawak -->
+              <path id="drop-zone-sarawak" data-state="Sarawak" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 412,328 C 420,310 440,312 470,330 C 500,338 520,315 545,290 C 580,270 600,240 625,230 C 655,225 670,200 680,185 C 690,195 700,225 710,245 C 680,250 635,260 620,315 C 570,350 515,362 475,370 C 440,380 415,350 412,328 Z" />
+
+              <!-- Sabah -->
+              <path id="drop-zone-sabah" data-state="Sabah" class="map-state fill-slate-50 hover:fill-amber-100" 
+                d="M 680,185 C 700,165 715,130 735,120 C 760,115 780,130 810,145 C 840,160 860,180 850,210 C 830,225 790,245 745,248 C 710,245 700,225 680,185 Z" />
+
+              <!-- WP Labuan -->
+              <path id="drop-zone-labuan" data-state="Wilayah Persekutuan Labuan" class="map-state fill-slate-50 hover:fill-amber-100" stroke-dasharray="2,2"
+                d="M 660,172 C 665,168 672,172 668,178 C 662,180 658,175 660,172 Z" />
+
+              <!-- Island Accents & Outlines (Matching worksheet picture) -->
+              <!-- Pulau Langkawi -->
+              <path d="M 50,90 C 45,85 55,75 60,82 C 62,90 54,95 50,90 Z" fill="none" />
+            </g>
+
+            <!-- MAP LABELS / ANNOTATIONS -->
+            <g id="map-annotations" class="pointer-events-none text-[10px] font-bold fill-slate-700">
+              <text x="82" y="55">Perlis</text>
+              <text x="110" y="90">Kedah</text>
+              <text x="35" y="120">P. Pinang</text>
+              <text x="120" y="160">Perak</text>
+              <text x="160" y="125">Kelantan</text>
+              <text x="215" y="150">Terengganu</text>
+              <text x="185" y="210">Pahang</text>
+              <text x="100" y="240">Selangor</text>
+              <text x="168" y="244" class="text-[7px] fill-red-700">KL</text>
+              <text x="175" y="285">N. Sembilan</text>
+              <text x="140" y="310">Melaka</text>
+              <text x="230" y="320">Johor</text>
+              <text x="500" y="325">Sarawak</text>
+              <text x="750" y="185">Sabah</text>
+              <text x="635" y="165" class="text-[8px] fill-purple-800">Labuan</text>
+            </g>
+          </svg>
+          
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. RESULTS MODAL SCREEN -->
+    <div id="screen-result" class="hidden fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+      <div class="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-8 text-center border-4 border-myYellow transform animate-bounce-short">
+        
+        <div id="result-icon-container" class="w-24 h-24 mx-auto mb-4 rounded-full bg-yellow-100 flex items-center justify-center text-5xl">
+          🏆
+        </div>
+
+        <h2 id="result-status-title" class="font-display text-3xl font-black text-myBlue mb-1">MISI SELESAI!</h2>
+        <p id="result-subtitle" class="text-sm text-slate-500 mb-6">Tahniah! Anda telah berjaya menyelesaikan Misi Jelajah Malaysia.</p>
+
+        <!-- Stats Grid -->
+        <div class="bg-slate-50 rounded-2xl p-4 border border-slate-200 grid grid-cols-2 gap-3 text-left mb-6">
+          <div>
+            <div class="text-xs text-slate-400 font-semibold uppercase">Nama Murid</div>
+            <div id="res-name" class="font-bold text-slate-800 truncate">-</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-400 font-semibold uppercase">Kelas</div>
+            <div id="res-class" class="font-bold text-slate-800">-</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-400 font-semibold uppercase">Jumlah Markah</div>
+            <div id="res-score" class="font-display font-extrabold text-xl text-myBlue">-</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-400 font-semibold uppercase">Tempoh Masa</div>
+            <div id="res-time" class="font-mono font-bold text-slate-800">-</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-400 font-semibold uppercase">Baki Nyawa</div>
+            <div id="res-lives" class="font-bold text-slate-800">-</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-400 font-semibold uppercase">Status Rekod</div>
+            <div id="res-sheet-status" class="text-xs font-semibold text-emerald-600 flex items-center mt-1">
+              <i class="fa-solid fa-spinner fa-spin mr-1"></i> Menyimpan...
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex space-x-3">
+          <button id="btn-restart" class="flex-1 py-3.5 bg-myYellow hover:bg-yellow-400 text-myBlue font-display font-extrabold rounded-xl shadow transition">
+            <i class="fa-solid fa-rotate-right mr-2"></i>MAIN SEMULA
+          </button>
+          <button id="btn-exit" class="flex-1 py-3.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-display font-extrabold rounded-xl transition">
+            <i class="fa-solid fa-door-open mr-2"></i>TAMAT
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- WEBCAM PREVIEW PIP CONTAINER -->
+  <div id="webcam-pip-box" class="fixed bottom-4 right-4 z-40 bg-slate-900 rounded-2xl shadow-2xl p-1.5 border-2 border-myYellow overflow-hidden w-44 md:w-56 transition-all duration-300">
+    <div class="relative w-full h-32 md:h-36 bg-black rounded-xl overflow-hidden flex items-center justify-center">
+      <video id="webcam-video" class="w-full h-full object-cover transform -scale-x-100" autoplay playsinline muted></video>
+      <canvas id="webcam-canvas" class="absolute inset-0 w-full h-full transform -scale-x-100 pointer-events-none"></canvas>
+      
+      <!-- Overlay Pinch Indicator -->
+      <div id="pinch-indicator" class="absolute top-2 left-2 px-2 py-0.5 bg-red-600/90 text-white rounded-md text-[10px] font-bold uppercase tracking-wider hidden flex items-center">
+        <span class="w-1.5 h-1.5 rounded-full bg-white animate-ping mr-1"></span> PINCH ACTIVE
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-500">
+    PERMAINAN INTERAKTIF PENDIDIKAN DIGITAL &copy; 2026 - PENGESANAN JARI WEBCAM (MEDIAPIPE COMPUTER VISION)
+  </footer>
+
+
+  <!-- SCRIPT LOGIC -->
+  <script>
+    // --- 1. STATE & CONSTANTS ---
+    const STATE_LIST = [
+      { id: 'johor', name: 'Johor' },
+      { id: 'kedah', name: 'Kedah' },
+      { id: 'kelantan', name: 'Kelantan' },
+      { id: 'melaka', name: 'Melaka' },
+      { id: 'n9', name: 'Negeri Sembilan' },
+      { id: 'pahang', name: 'Pahang' },
+      { id: 'perak', name: 'Perak' },
+      { id: 'perlis', name: 'Perlis' },
+      { id: 'penang', name: 'Pulau Pinang' },
+      { id: 'selangor', name: 'Selangor' },
+      { id: 'terengganu', name: 'Terengganu' },
+      { id: 'sabah', name: 'Sabah' },
+      { id: 'sarawak', name: 'Sarawak' },
+      { id: 'wpkl', name: 'Wilayah Persekutuan Kuala Lumpur' },
+      { id: 'putrajaya', name: 'Wilayah Persekutuan Putrajaya' },
+      { id: 'labuan', name: 'Wilayah Persekutuan Labuan' }
+    ];
+
+    let gameState = {
+      studentName: '',
+      studentClass: '',
+      score: 0,
+      lives: 3,
+      timerSeconds: 0,
+      timerInterval: null,
+      isGaming: false,
+      placedCount: 0,
+      draggedPiece: null, // HTML element currently pinched/dragged
+      smoothedPointer: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+      isPinching: false
+    };
+
+    // Web Audio Synthesizer sound effects
+    const AudioEngine = {
+      ctx: null,
+      init() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+      },
+      playTone(freq, type, duration) {
+        if (!this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+          gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + duration);
+        } catch (e) {}
+      },
+      playCorrect() {
+        this.init();
+        this.playTone(523.25, 'sine', 0.15); // C5
+        setTimeout(() => this.playTone(659.25, 'sine', 0.25), 100); // E5
+      },
+      playWrong() {
+        this.init();
+        this.playTone(220, 'sawtooth', 0.2); // A3
+        setTimeout(() => this.playTone(180, 'sawtooth', 0.3), 150);
+      },
+      playWin() {
+        this.init();
+        [440, 554.37, 659.25, 880].forEach((freq, idx) => {
+          setTimeout(() => this.playTone(freq, 'triangle', 0.3), idx * 120);
+        });
+      }
+    };
+
+    // --- 2. DOM ELEMENTS ---
+    const screens = {
+      welcome: document.getElementById('screen-welcome'),
+      game: document.getElementById('screen-game'),
+      result: document.getElementById('screen-result')
+    };
+
+    const elForm = document.getElementById('form-register');
+    const elPiecesContainer = document.getElementById('puzzle-pieces-container');
+    const elVirtualCursor = document.getElementById('virtual-cursor');
+    const elPinchIndicator = document.getElementById('pinch-indicator');
+    const elHandStatusText = document.getElementById('hand-status-text');
+    const elHandStatusDot = document.getElementById('hand-status-dot');
+
+    // --- 3. INIT & GAME PUZZLE PREPARATION ---
+    function initPuzzlePieces() {
+      elPiecesContainer.innerHTML = '';
+      // Shuffle piece display order
+      const shuffled = [...STATE_LIST].sort(() => Math.random() - 0.5);
+
+      shuffled.forEach(item => {
+        const piece = document.createElement('div');
+        piece.id = `piece-${item.id}`;
+        piece.dataset.stateId = item.id;
+        piece.dataset.stateName = item.name;
+        piece.className = 'puzzle-piece bg-slate-50 border-2 border-slate-300 hover:border-myBlue text-slate-800 font-bold px-3 py-2.5 rounded-xl shadow-sm cursor-pointer text-xs md:text-sm flex items-center justify-between select-none transition';
+        piece.innerHTML = `
+          <span>${item.name}</span>
+          <i class="fa-solid fa-grip-vertical text-slate-400 text-xs"></i>
+        `;
+
+        // Touch/Mouse fallback handlers for direct desktop debug
+        piece.addEventListener('mousedown', (e) => startMouseDrag(e, piece));
+        elPiecesContainer.appendChild(piece);
+      });
+
+      // Reset map paths styling
+      document.querySelectorAll('.map-state').forEach(path => {
+        path.classList.remove('state-correct', 'drop-highlight');
+      });
+    }
+
+    // --- 4. TIMER LOGIC ---
+    function startTimer() {
+      gameState.timerSeconds = 0;
+      clearInterval(gameState.timerInterval);
+      gameState.timerInterval = setInterval(() => {
+        gameState.timerSeconds++;
+        const mins = String(Math.floor(gameState.timerSeconds / 60)).padStart(2, '0');
+        const secs = String(gameState.timerSeconds % 60).padStart(2, '0');
+        document.getElementById('timer-display').innerText = `${mins}:${secs}`;
+      }, 1000);
+    }
+
+    function stopTimer() {
+      clearInterval(gameState.timerInterval);
+    }
+
+    // --- 5. GAME SCORE & LIVES UPDATE ---
+    function updateStatsDisplay() {
+      document.getElementById('score-display').innerText = `${gameState.score} / 160`;
+      
+      let heartsHtml = '';
+      for (let i = 0; i < 3; i++) {
+        heartsHtml += i < gameState.lives ? '❤️' : '🖤';
+      }
+      document.getElementById('lives-display').innerHTML = heartsHtml;
+      document.getElementById('pieces-left-count').innerText = `${16 - gameState.placedCount} / 16`;
+    }
+
+    // --- 6. DRAG AND DROP COLLISION ENGINE ---
+    function checkDropCollision(cursorX, cursorY) {
+      if (!gameState.draggedPiece) return;
+
+      const stateId = gameState.draggedPiece.dataset.stateId;
+      const targetPath = document.getElementById(`drop-zone-${stateId}`);
+      
+      if (!targetPath) return;
+
+      // Get target drop boundary
+      const rect = targetPath.getBoundingClientRect();
+
+      // Check if cursor inside boundary box with padding tolerance
+      const padding = 20;
+      const isInsideTarget = (
+        cursorX >= rect.left - padding &&
+        cursorX <= rect.right + padding &&
+        cursorY >= rect.top - padding &&
+        cursorY <= rect.bottom + padding
+      );
+
+      if (isInsideTarget) {
+        // CORRECT DROP
+        AudioEngine.playCorrect();
+        targetPath.classList.add('state-correct');
+        gameState.draggedPiece.classList.add('placed');
+        gameState.draggedPiece.style.transform = 'none';
+        gameState.score += 10;
+        gameState.placedCount++;
+
+        showTemporaryFeedback('TAHNIAH! JAWAPAN BETUL! +10', 'bg-emerald-500');
+      } else {
+        // INCORRECT DROP
+        AudioEngine.playWrong();
+        gameState.lives--;
+        showTemporaryFeedback('SALAH! NYAWA BERKURANG -1', 'bg-red-500');
+
+        // Reset piece transform animation
+        gameState.draggedPiece.style.transform = 'none';
+      }
+
+      gameState.draggedPiece.classList.remove('dragging');
+      gameState.draggedPiece = null;
+      updateStatsDisplay();
+
+      // Check End Game Conditions
+      if (gameState.lives <= 0) {
+        finishGame(false);
+      } else if (gameState.placedCount >= 16) {
+        finishGame(true);
+      }
+    }
+
+    function showTemporaryFeedback(text, bgColor) {
+      const instr = document.getElementById('instruction-text');
+      const originalText = "Gunakan jari telunjuk & lakukan 'Pinch' untuk mengambil label negeri ke kedudukan betul!";
+      instr.innerText = text;
+      instr.parentElement.className = `flex items-center space-x-3 text-sm font-bold text-white p-1 px-3 rounded-lg ${bgColor} transition`;
+
+      setTimeout(() => {
+        instr.innerText = originalText;
+        instr.parentElement.className = `flex items-center space-x-3 text-sm text-myBlue font-semibold`;
+      }, 1800);
+    }
+
+    // --- 7. WEBCAM & MEDIAPIPE HAND TRACKING ---
+    const videoElement = document.getElementById('webcam-video');
+    const canvasElement = document.getElementById('webcam-canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+
+    function initHandTracking() {
+      const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.65,
+        minTrackingConfidence: 0.65
+      });
+
+      hands.onResults(onHandResults);
+
+      const camera = new Camera(videoElement, {
+        onFrame: async () => {
+          await hands.send({ image: videoElement });
+        },
+        width: 320,
+        height: 240
+      });
+
+      camera.start()
+        .then(() => {
+          elHandStatusText.innerText = "Kamera Aktif";
+          elHandStatusDot.className = "w-2 h-2 rounded-full bg-emerald-500 mr-2";
+        })
+        .catch(err => {
+          console.error("Webcam init error:", err);
+          elHandStatusText.innerText = "Gagal Mengakses Kamera";
+          elHandStatusDot.className = "w-2 h-2 rounded-full bg-red-500 mr-2";
+        });
+    }
+
+    function onHandResults(results) {
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+
+        // Draw hand skeleton on preview PIP
+        drawLandmarksOnCanvas(landmarks);
+
+        // Landmark 8 = Index Finger Tip
+        const indexTip = landmarks[8];
+        // Landmark 4 = Thumb Tip
+        const thumbTip = landmarks[4];
+
+        // Mirror X-axis coordinate due to selfie camera view
+        const targetX = (1 - indexTip.x) * window.innerWidth;
+        const targetY = indexTip.y * window.innerHeight;
+
+        // Smooth Exponential Moving Average (EMA) to prevent jitter
+        const alpha = 0.35;
+        gameState.smoothedPointer.x += (targetX - gameState.smoothedPointer.x) * alpha;
+        gameState.smoothedPointer.y += (targetY - gameState.smoothedPointer.y) * alpha;
+
+        const curX = gameState.smoothedPointer.x;
+        const curY = gameState.smoothedPointer.y;
+
+        // Update virtual pointer UI position
+        elVirtualCursor.style.left = `${curX}px`;
+        elVirtualCursor.style.top = `${curY}px`;
+        elVirtualCursor.style.opacity = '1';
+
+        // Pinch Detection: Euclidean distance between Thumb Tip & Index Tip
+        const pinchDistance = Math.hypot(
+          indexTip.x - thumbTip.x,
+          indexTip.y - thumbTip.y
+        );
+
+        const PINCH_THRESHOLD = 0.07;
+        const nowPinching = pinchDistance < PINCH_THRESHOLD;
+
+        if (nowPinching && !gameState.isPinching) {
+          // PINCH STARTED (GRAB)
+          gameState.isPinching = true;
+          elPinchIndicator.classList.remove('hidden');
+          elVirtualCursor.classList.add('scale-125', 'bg-emerald-500');
+
+          handlePinchGrab(curX, curY);
+
+        } else if (!nowPinching && gameState.isPinching) {
+          // PINCH RELEASED (DROP)
+          gameState.isPinching = false;
+          elPinchIndicator.classList.add('hidden');
+          elVirtualCursor.classList.remove('scale-125', 'bg-emerald-500');
+
+          if (gameState.draggedPiece) {
+            checkDropCollision(curX, curY);
+          }
+        }
+
+        // If currently dragging, update element positioning
+        if (gameState.isPinching && gameState.draggedPiece) {
+          gameState.draggedPiece.style.position = 'fixed';
+          gameState.draggedPiece.style.left = `${curX - 60}px`;
+          gameState.draggedPiece.style.top = `${curY - 20}px`;
+          gameState.draggedPiece.style.zIndex = '1000';
+        }
+
+      } else {
+        elVirtualCursor.style.opacity = '0';
+        elHandStatusText.innerText = "Tangan Tidak Dikesan";
+        elHandStatusDot.className = "w-2 h-2 rounded-full bg-amber-500 mr-2";
+      }
+
+      canvasCtx.restore();
+    }
+
+    function handlePinchGrab(cursorX, cursorY) {
+      if (gameState.draggedPiece) return;
+
+      // Find puzzle piece under virtual cursor coordinates
+      const pieces = document.querySelectorAll('.puzzle-piece:not(.placed)');
+      pieces.forEach(piece => {
+        const rect = piece.getBoundingClientRect();
+        if (
+          cursorX >= rect.left && cursorX <= rect.right &&
+          cursorY >= rect.top && cursorY <= rect.bottom
+        ) {
+          gameState.draggedPiece = piece;
+          piece.classList.add('dragging');
+        }
+      });
+    }
+
+    function drawLandmarksOnCanvas(landmarks) {
+      canvasCtx.fillStyle = '#FFD100';
+      canvasCtx.strokeStyle = '#0A3895';
+      canvasCtx.lineWidth = 2;
+
+      landmarks.forEach((point) => {
+        const x = point.x * canvasElement.width;
+        const y = point.y * canvasElement.height;
+        canvasCtx.beginPath();
+        canvasCtx.arc(x, y, 3, 0, 2 * Math.PI);
+        canvasCtx.fill();
+        canvasCtx.stroke();
+      });
+    }
+
+    // --- 8. MOUSE FALLBACK FOR TESTING ---
+    function startMouseDrag(e, piece) {
+      if (piece.classList.contains('placed')) return;
+      gameState.draggedPiece = piece;
+      piece.classList.add('dragging');
+
+      const moveHandler = (evt) => {
+        piece.style.position = 'fixed';
+        piece.style.left = `${evt.clientX - 50}px`;
+        piece.style.top = `${evt.clientY - 20}px`;
+        piece.style.zIndex = '1000';
+      };
+
+      const upHandler = (evt) => {
+        document.removeEventListener('mousemove', moveHandler);
+        document.removeEventListener('mouseup', upHandler);
+        checkDropCollision(evt.clientX, evt.clientY);
+      };
+
+      document.addEventListener('mousemove', moveHandler);
+      document.addEventListener('mouseup', upHandler);
+    }
+
+    // --- 9. START & FINISH GAME FLOW ---
+    elForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const nameVal = document.getElementById('student-name').value.trim();
+      const classVal = document.getElementById('student-class').value.trim();
+
+      if (!nameVal || !classVal) return;
+
+      gameState.studentName = nameVal;
+      gameState.studentClass = classVal;
+      gameState.score = 0;
+      gameState.lives = 3;
+      gameState.placedCount = 0;
+      gameState.isGaming = true;
+
+      screens.welcome.classList.add('hidden');
+      screens.game.classList.remove('hidden');
+      document.getElementById('top-stats-bar').classList.remove('hidden');
+
+      initPuzzlePieces();
+      updateStatsDisplay();
+      startTimer();
+      initHandTracking();
+    });
+
+    function finishGame(isWin) {
+      stopTimer();
+      gameState.isGaming = false;
+
+      if (isWin) {
+        AudioEngine.playWin();
+        document.getElementById('result-icon-container').innerHTML = '🏆';
+        document.getElementById('result-status-title').innerText = 'TAHNIAH! MISI SELESAI!';
+        document.getElementById('result-subtitle').innerText = 'Anda memang pakar geografi Malaysia!';
+      } else {
+        document.getElementById('result-icon-container').innerHTML = '💔';
+        document.getElementById('result-status-title').innerText = 'CUBA LAGI!';
+        document.getElementById('result-subtitle').innerText = 'Nyawa anda telah habis. Teruskan berusaha!';
+      }
+
+      document.getElementById('res-name').innerText = gameState.studentName;
+      document.getElementById('res-class').innerText = gameState.studentClass;
+      document.getElementById('res-score').innerText = `${gameState.score} / 160`;
+      document.getElementById('res-time').innerText = document.getElementById('timer-display').innerText;
+      document.getElementById('res-lives').innerText = `${gameState.lives} / 3`;
+
+      screens.result.classList.remove('hidden');
+
+      // Save Data to Google Sheets via Apps Script
+      saveToGoogleSheets(isWin);
+    }
+
+    // --- 10. GOOGLE SHEETS INTEGRATION ---
+    function saveToGoogleSheets(isWin) {
+      const sheetStatusEl = document.getElementById('res-sheet-status');
+      sheetStatusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Menyimpan ke Google Sheets...`;
+      sheetStatusEl.className = "text-xs font-semibold text-amber-600 flex items-center mt-1";
+
+      const recordPayload = {
+        studentName: gameState.studentName,
+        studentClass: gameState.studentClass,
+        score: gameState.score,
+        duration: document.getElementById('timer-display').innerText,
+        livesRemaining: gameState.lives,
+        status: isWin ? 'MENANG' : 'KALAH'
+      };
+
+      // Check if running inside Google Apps Script environment
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler((response) => {
+            sheetStatusEl.innerHTML = `<i class="fa-solid fa-circle-check mr-1"></i> Berjaya Disimpan!`;
+            sheetStatusEl.className = "text-xs font-semibold text-emerald-600 flex items-center mt-1";
+          })
+          .withFailureHandler((err) => {
+            console.error("Sheets save failure:", err);
+            sheetStatusEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-1"></i> Gagal Disimpan`;
+            sheetStatusEl.className = "text-xs font-semibold text-red-600 flex items-center mt-1";
+          })
+          .saveGameRecord(recordPayload);
+      } else {
+        // Fallback simulation for local/testing environment
+        setTimeout(() => {
+          sheetStatusEl.innerHTML = `<i class="fa-solid fa-circle-check mr-1"></i> Simulasi Berjaya (Mod Tempatan)`;
+          sheetStatusEl.className = "text-xs font-semibold text-blue-600 flex items-center mt-1";
+        }, 1200);
+      }
+    }
+
+    // --- 11. BUTTON CONTROLS ---
+    document.getElementById('btn-restart').addEventListener('click', () => {
+      screens.result.classList.add('hidden');
+      gameState.score = 0;
+      gameState.lives = 3;
+      gameState.placedCount = 0;
+      gameState.isGaming = true;
+      initPuzzlePieces();
+      updateStatsDisplay();
+      startTimer();
+    });
+
+    document.getElementById('btn-exit').addEventListener('click', () => {
+      screens.result.classList.add('hidden');
+      screens.game.classList.add('hidden');
+      screens.welcome.classList.remove('hidden');
+      document.getElementById('top-stats-bar').classList.add('hidden');
+    });
+  </script>
+</body>
+</html>
